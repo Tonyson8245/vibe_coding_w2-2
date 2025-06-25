@@ -178,6 +178,14 @@ python -m pytest tests/test_chat.py -v
 
 - **Tonyson8245** - [GitHub Profile](https://github.com/Tonyson8245)
 
+## 📈 프로젝트 현황
+
+- ✅ LangGraph Agent 구현 완료
+- ✅ FastAPI 백엔드 개발 완료
+- ✅ Streamlit 프론트엔드 개발 완료
+- ✅ 테스트 코드 작성 완료
+- 🔄 현재 PR 테스트 진행 중
+
 ## 🔗 관련 링크
 
 - [프로젝트 저장소](https://github.com/Tonyson8245/vibe_coding_w2-2)
