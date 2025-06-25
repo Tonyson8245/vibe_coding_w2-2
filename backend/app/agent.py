@@ -7,8 +7,8 @@ from langgraph.prebuilt import create_react_agent
 
 def create_agent():
     """LangGraph React Agent를 생성합니다."""
-    # Gemini LLM 모델 초기화
-    llm = ChatGoogleGenerativeAI(
+    # Gemini LLM 모델 초기화 - 의도적 버그: 괄호 누락
+    llm = ChatGoogleGenerativeAI
         model="gemini-2.0-flash",
         temperature=0.7,
         google_api_key=os.getenv("GOOGLE_API_KEY")
