@@ -1,0 +1,89 @@
+name: PR Auto Assigner
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+jobs:
+  assign-reviewer:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auto Assign Reviewers
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+
+            // 변경된 파일 목록 가져오기
+            const changedFiles = await github.rest.pulls.listFiles({
+              owner,
+              repo,
+              pull_number: pr.number
+            });
+
+            let reviewers = [];
+            let assignees = [];
+
+            // 파일별 담당자 매핑 (실제 프로젝트에 맞게 수정)
+            const codeOwners = {
+              'backend/': ['backend-team'],
+              'frontend/': ['frontend-team'],
+              'docs/': ['docs-team'],
+              'tests/': ['qa-team']
+            };
+
+            // 변경된 파일에 따라 리뷰어 결정
+            for (const file of changedFiles.data) {
+              for (const [path, owners] of Object.entries(codeOwners)) {
+                if (file.filename.startsWith(path)) {
+                  reviewers.push(...owners);
+                }
+              }
+            }
+
+            // 중복 제거
+            reviewers = [...new Set(reviewers)];
+
+            // PR 생성자는 제외
+            reviewers = reviewers.filter(reviewer => reviewer !== pr.user.login);
+
+            // 기본 담당자 (실제 GitHub 사용자명으로 변경 필요)
+            if (reviewers.length === 0) {
+              reviewers = ['default-reviewer'];
+            }
+
+            // 리뷰어 할당
+            if (reviewers.length > 0) {
+              try {
+                await github.rest.pulls.requestReviewers({
+                  owner,
+                  repo,
+                  pull_number: pr.number,
+                  reviewers: reviewers.slice(0, 3) // 최대 3명
+                });
+                
+                console.log(`Assigned reviewers: ${reviewers.join(', ')}`);
+              } catch (error) {
+                console.log(`Error assigning reviewers: ${error.message}`);
+              }
+            }
+
+            // PR 담당자 할당 (본인에게)
+            try {
+              await github.rest.issues.addAssignees({
+                owner,
+                repo,
+                issue_number: pr.number,
+                assignees: [pr.user.login]
+              });
+              
+              console.log(`Assigned PR to: ${pr.user.login}`);
+            } catch (error) {
+              console.log(`Error assigning PR: ${error.message}`);
+            }

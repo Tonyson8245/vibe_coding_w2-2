@@ -1,0 +1,142 @@
+name: Issue Auto Labeler
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  label-issue:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Auto Label Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue = context.payload.issue;
+
+            let labels = [];
+
+            const title = issue.title.toLowerCase();
+            const body = issue.body ? issue.body.toLowerCase() : '';
+            const issueText = `${title} ${body}`;
+
+            // 이슈 타입 분류 키워드
+            const typeKeywords = {
+              'bug': ['bug', 'error', 'issue', 'problem', 'broken', 'fail', 'crash', 'exception', '버그', '오류', '에러', '문제'],
+              'enhancement': ['feature', 'enhancement', 'improve', 'add', 'new', 'request', '기능', '개선', '추가', '요청'],
+              'documentation': ['doc', 'documentation', 'readme', 'guide', 'tutorial', '문서', '가이드', '설명'],
+              'question': ['question', 'help', 'how', 'why', 'what', '질문', '도움', '어떻게', '왜'],
+              'testing': ['test', 'testing', 'spec', 'coverage', '테스트', '검증'],
+              'performance': ['performance', 'slow', 'fast', 'optimize', 'speed', '성능', '최적화', '속도'],
+              'security': ['security', 'vulnerability', 'auth', 'permission', '보안', '취약점', '권한']
+            };
+
+            // 키워드 기반 라벨링
+            for (const [label, keywords] of Object.entries(typeKeywords)) {
+              if (keywords.some(keyword => issueText.includes(keyword))) {
+                labels.push(label);
+              }
+            }
+
+            // 컴포넌트별 라벨링
+            const componentKeywords = {
+              'backend': ['api', 'server', 'database', 'backend', 'db', '백엔드', '서버', '데이터베이스'],
+              'frontend': ['ui', 'frontend', 'client', 'browser', 'css', 'html', 'javascript', '프론트엔드', 'ui', '화면'],
+              'ci-cd': ['ci', 'cd', 'pipeline', 'deploy', 'build', 'github actions', '배포', '빌드'],
+              'dependencies': ['dependency', 'package', 'npm', 'pip', 'requirements', '의존성', '패키지']
+            };
+
+            for (const [label, keywords] of Object.entries(componentKeywords)) {
+              if (keywords.some(keyword => issueText.includes(keyword))) {
+                labels.push(label);
+              }
+            }
+
+            // 우선순위 라벨링
+            const priorityKeywords = {
+              'priority-critical': ['critical', 'urgent', 'emergency', 'production down', '긴급', '심각', '중요'],
+              'priority-high': ['high priority', 'important', 'asap', 'soon', '높은 우선순위'],
+              'priority-low': ['low priority', 'minor', 'nice to have', '낮은 우선순위', '부차적']
+            };
+
+            for (const [label, keywords] of Object.entries(priorityKeywords)) {
+              if (keywords.some(keyword => issueText.includes(keyword))) {
+                labels.push(label);
+              }
+            }
+
+            // 난이도 라벨링
+            if (issueText.includes('beginner') || issueText.includes('easy') || issueText.includes('simple') || 
+                issueText.includes('초보') || issueText.includes('쉬운') || issueText.includes('간단')) {
+              labels.push('good first issue');
+            }
+
+            if (issueText.includes('complex') || issueText.includes('difficult') || issueText.includes('advanced') ||
+                issueText.includes('복잡') || issueText.includes('어려운') || issueText.includes('고급')) {
+              labels.push('help wanted');
+            }
+
+            // 이슈 길이에 따른 라벨링
+            if (issue.body && issue.body.length > 1000) {
+              labels.push('detailed');
+            } else if (!issue.body || issue.body.length < 100) {
+              labels.push('needs-info');
+            }
+
+            // 특수 상황 라벨링
+            if (title.startsWith('[') && title.includes(']')) {
+              labels.push('categorized');
+            }
+
+            if (issueText.includes('duplicate') || issueText.includes('중복')) {
+              labels.push('duplicate');
+            }
+
+            if (issueText.includes('wontfix') || issueText.includes('수정 안함')) {
+              labels.push('wontfix');
+            }
+
+            // 기본 라벨 (분류되지 않은 경우)
+            if (labels.length === 0) {
+              labels.push('triage-needed');
+            }
+
+            // 중복 제거
+            labels = [...new Set(labels)];
+
+            // 라벨 적용
+            if (labels.length > 0) {
+              try {
+                await github.rest.issues.addLabels({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  labels: labels
+                });
+                
+                console.log(`Added labels: ${labels.join(', ')}`);
+                
+                // 라벨링 결과 댓글 작성
+                const labelComment = `
+                🏷️ **자동 라벨링 완료**
+                
+                다음 라벨이 자동으로 추가되었습니다: ${labels.map(l => `\`${l}\``).join(', ')}
+                
+                라벨이 부정확하다면 수동으로 수정해주세요.
+                `;
+                
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  body: labelComment
+                });
+                
+              } catch (error) {
+                console.log(`Error adding labels: ${error.message}`);
+              }
+            }

@@ -1,0 +1,125 @@
+name: Issue Auto Assigner
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  assign-issue:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Auto Assign Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue = context.payload.issue;
+
+            // 이슈 라벨 가져오기
+            const labels = issue.labels.map(label => label.name);
+
+            let assignees = [];
+
+            // 라벨별 담당자 매핑 (실제 GitHub 사용자명으로 변경 필요)
+            const labelToAssignee = {
+              'bug': ['bug-hunter'],
+              'enhancement': ['feature-developer'], 
+              'documentation': ['doc-writer'],
+              'backend': ['backend-team'],
+              'frontend': ['frontend-team'],
+              'testing': ['qa-engineer'],
+              'ci-cd': ['devops-engineer'],
+              'dependencies': ['maintenance-team'],
+              'priority-critical': ['tech-lead'],
+              'priority-high': ['senior-developer'],
+              'good first issue': ['mentor']
+            };
+
+            // 라벨에 따른 담당자 결정
+            for (const label of labels) {
+              if (labelToAssignee[label]) {
+                assignees.push(...labelToAssignee[label]);
+              }
+            }
+
+            // 중복 제거
+            assignees = [...new Set(assignees)];
+
+            // 이슈 생성자는 제외 (본인이 생성한 이슈에 본인을 할당하지 않음)
+            assignees = assignees.filter(assignee => assignee !== issue.user.login);
+
+            // 기본 담당자 설정 (라벨이 없거나 매칭되는 담당자가 없는 경우)
+            if (assignees.length === 0) {
+              // 이슈 제목이나 내용을 분석하여 담당자 결정
+              const title = issue.title.toLowerCase();
+              const body = issue.body ? issue.body.toLowerCase() : '';
+              
+              if (title.includes('test') || body.includes('test')) {
+                assignees.push('qa-engineer');
+              } else if (title.includes('doc') || body.includes('documentation')) {
+                assignees.push('doc-writer');
+              } else if (title.includes('api') || title.includes('backend')) {
+                assignees.push('backend-team');
+              } else if (title.includes('ui') || title.includes('frontend')) {
+                assignees.push('frontend-team');
+              } else {
+                // 기본 담당자
+                assignees.push('default-maintainer');
+              }
+            }
+
+            // 담당자 할당
+            if (assignees.length > 0) {
+              try {
+                await github.rest.issues.addAssignees({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  assignees: assignees.slice(0, 3) // 최대 3명까지만 할당
+                });
+                
+                console.log(`Assigned issue to: ${assignees.join(', ')}`);
+                
+                // 할당 알림 댓글 작성
+                const assignmentComment = `
+                🤖 **자동 할당 완료**
+                
+                이 이슈가 다음 담당자에게 할당되었습니다: ${assignees.map(a => `@${a}`).join(', ')}
+                
+                할당 근거:
+                ${labels.length > 0 ? `- 라벨: ${labels.join(', ')}` : '- 이슈 내용 분석 결과'}
+                
+                담당자가 곧 검토하고 응답드리겠습니다! 📋
+                `;
+                
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  body: assignmentComment
+                });
+                
+              } catch (error) {
+                console.log(`Error assigning issue: ${error.message}`);
+                
+                // 할당 실패 시 댓글로 알림
+                const errorComment = `
+                ⚠️ **자동 할당 실패**
+                
+                담당자 자동 할당 중 오류가 발생했습니다.
+                관리자가 수동으로 담당자를 할당하겠습니다.
+                
+                오류: ${error.message}
+                `;
+                
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  body: errorComment
+                });
+              }
+            }

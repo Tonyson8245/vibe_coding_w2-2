@@ -1,0 +1,128 @@
+name: PR Auto Labeler
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  label-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auto Label PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+
+            // 변경된 파일 목록 가져오기
+            const changedFiles = await github.rest.pulls.listFiles({
+              owner,
+              repo,
+              pull_number: pr.number
+            });
+
+            let labels = [];
+
+            // PR 제목 기반 라벨링
+            const title = pr.title.toLowerCase();
+            const branchName = pr.head.ref.toLowerCase();
+
+            // 브랜치명 기반 라벨링
+            if (branchName.startsWith('feature/')) {
+              labels.push('enhancement');
+            } else if (branchName.startsWith('fix/') || branchName.startsWith('bugfix/')) {
+              labels.push('bug');
+            } else if (branchName.startsWith('hotfix/')) {
+              labels.push('hotfix');
+            } else if (branchName.startsWith('docs/')) {
+              labels.push('documentation');
+            }
+
+            // 제목 키워드 기반 라벨링
+            if (title.includes('feat') || title.includes('feature')) {
+              labels.push('enhancement');
+            }
+            if (title.includes('fix') || title.includes('bug')) {
+              labels.push('bug');
+            }
+            if (title.includes('doc') || title.includes('documentation')) {
+              labels.push('documentation');
+            }
+            if (title.includes('test')) {
+              labels.push('testing');
+            }
+            if (title.includes('refactor') || title.includes('refactoring')) {
+              labels.push('refactoring');
+            }
+
+            // 파일 변경 기반 라벨링
+            const fileExtensions = changedFiles.data.map(file => {
+              const ext = file.filename.split('.').pop();
+              const path = file.filename;
+              return { ext, path, filename: file.filename };
+            });
+
+            // 파일 경로 기반 라벨링
+            for (const file of fileExtensions) {
+              if (file.path.startsWith('backend/')) {
+                labels.push('backend');
+              }
+              if (file.path.startsWith('frontend/')) {
+                labels.push('frontend');
+              }
+              if (file.path.startsWith('tests/')) {
+                labels.push('testing');
+              }
+              if (file.path.startsWith('docs/')) {
+                labels.push('documentation');
+              }
+              if (file.filename === 'requirements.txt' || file.filename.includes('requirements')) {
+                labels.push('dependencies');
+              }
+              if (file.path.includes('.github/workflows/')) {
+                labels.push('ci-cd');
+              }
+            }
+
+            // 변경 사항 크기에 따른 라벨링
+            const additions = pr.additions;
+            const deletions = pr.deletions;
+            const totalChanges = additions + deletions;
+
+            if (totalChanges < 10) {
+              labels.push('size/xs');
+            } else if (totalChanges < 50) {
+              labels.push('size/s');
+            } else if (totalChanges < 200) {
+              labels.push('size/m');
+            } else if (totalChanges < 500) {
+              labels.push('size/l');
+            } else {
+              labels.push('size/xl');
+            }
+
+            // 중복 제거
+            labels = [...new Set(labels)];
+
+            // 라벨 적용
+            if (labels.length > 0) {
+              try {
+                await github.rest.issues.addLabels({
+                  owner,
+                  repo,
+                  issue_number: pr.number,
+                  labels: labels
+                });
+                
+                console.log(`Added labels: ${labels.join(', ')}`);
+              } catch (error) {
+                console.log(`Error adding labels: ${error.message}`);
+              }
+            }

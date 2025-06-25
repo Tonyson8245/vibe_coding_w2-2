@@ -1,0 +1,122 @@
+name: PR Auto Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auto Code Review Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+
+            // 변경된 파일 목록 가져오기
+            const changedFiles = await github.rest.pulls.listFiles({
+              owner,
+              repo,
+              pull_number: pr.number
+            });
+
+            let reviewComments = [];
+
+            // 코드 리뷰 템플릿
+            const generateReviewComment = (filename, changes) => {
+              let suggestions = [];
+              
+              // Python 파일 검사
+              if (filename.endsWith('.py')) {
+                suggestions.push('✅ Python 파일 변경이 감지되었습니다.');
+                suggestions.push('🔍 다음 사항들을 확인해주세요:');
+                suggestions.push('- PEP8 스타일 가이드 준수');
+                suggestions.push('- 적절한 docstring 작성');
+                suggestions.push('- 타입 힌트 사용');
+                suggestions.push('- 테스트 코드 포함');
+              }
+              
+              // 테스트 파일 검사
+              if (filename.includes('test_') || filename.startsWith('tests/')) {
+                suggestions.push('🧪 테스트 파일이 변경되었습니다.');
+                suggestions.push('- 테스트 커버리지 확인');
+                suggestions.push('- Edge case 테스트 포함 여부');
+                suggestions.push('- 테스트 실행 시간 최적화');
+              }
+              
+              // 설정 파일 검사
+              if (filename.includes('requirements.txt') || filename.includes('config')) {
+                suggestions.push('⚙️ 설정 파일이 변경되었습니다.');
+                suggestions.push('- 의존성 버전 호환성 확인');
+                suggestions.push('- 보안 취약점 검사 필요');
+                suggestions.push('- 문서 업데이트 확인');
+              }
+              
+              return suggestions;
+            };
+
+            // 전체 리뷰 코멘트 생성
+            let overallComment = `
+            ## 🤖 자동 코드 리뷰
+
+            안녕하세요! 자동 코드 리뷰 봇입니다. 다음 사항들을 검토해주세요:
+
+            ### 📊 변경 사항 요약
+            - **추가된 줄**: ${pr.additions}
+            - **삭제된 줄**: ${pr.deletions}
+            - **변경된 파일**: ${changedFiles.data.length}개
+
+            ### 📁 변경된 파일별 체크포인트
+            `;
+
+            // 파일별 리뷰 코멘트 추가
+            for (const file of changedFiles.data) {
+              const suggestions = generateReviewComment(file.filename, file);
+              if (suggestions.length > 0) {
+                overallComment += `
+                
+            #### 📄 ${file.filename}
+            ${suggestions.map(s => `- ${s}`).join('\n')}
+                `;
+              }
+            }
+
+            overallComment += `
+
+            ### 🔍 일반적인 체크리스트
+            - [ ] 코드가 프로젝트의 코딩 스타일을 따르고 있나요?
+            - [ ] 적절한 에러 핸들링이 포함되어 있나요?
+            - [ ] 보안 관련 고려사항이 반영되어 있나요?
+            - [ ] 성능에 영향을 미치는 변경사항이 있나요?
+            - [ ] 문서화가 필요한 변경사항이 있나요?
+
+            ### 📝 추가 권장사항
+            - 변경사항에 대한 충분한 설명을 PR 설명에 포함해주세요
+            - 가능하다면 스크린샷이나 데모를 첨부해주세요
+            - 브레이킹 체인지가 있다면 CHANGELOG를 업데이트해주세요
+
+            ---
+            *이 리뷰는 자동으로 생성되었습니다. 추가 질문이나 논의가 필요하시면 언제든 코멘트를 남겨주세요! 🚀*
+            `;
+
+            // 리뷰 코멘트 작성
+            try {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pr.number,
+                body: overallComment
+              });
+              
+              console.log('Auto code review comment added');
+            } catch (error) {
+              console.log(`Error adding review comment: ${error.message}`);
+            }
